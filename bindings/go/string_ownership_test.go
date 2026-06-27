@@ -698,6 +698,34 @@ func TestFfiOperatorWriterWithArgTypes(t *testing.T) {
 	}
 }
 
+func TestFfiOperatorWriteWithMetadataSignature(t *testing.T) {
+	if ffiOperatorWriteWithMetadata.opts.rType != &typeResultWrite {
+		t.Fatalf("ffiOperatorWriteWithMetadata rType = %v, want typeResultWrite", ffiOperatorWriteWithMetadata.opts.rType)
+	}
+	aTypes := ffiOperatorWriteWithMetadata.opts.aTypes
+	if len(aTypes) != 4 {
+		t.Fatalf("ffiOperatorWriteWithMetadata aTypes len = %d, want 4", len(aTypes))
+	}
+	for i, at := range aTypes {
+		if at != &ffi.TypePointer {
+			t.Fatalf("ffiOperatorWriteWithMetadata aTypes[%d] = %v, want TypePointer", i, at)
+		}
+	}
+}
+
+func TestFfiWriterCloseWithMetadataSignature(t *testing.T) {
+	if ffiWriterCloseWithMetadata.opts.rType != &typeResultWrite {
+		t.Fatalf("ffiWriterCloseWithMetadata rType = %v, want typeResultWrite", ffiWriterCloseWithMetadata.opts.rType)
+	}
+	aTypes := ffiWriterCloseWithMetadata.opts.aTypes
+	if len(aTypes) != 1 {
+		t.Fatalf("ffiWriterCloseWithMetadata aTypes len = %d, want 1", len(aTypes))
+	}
+	if aTypes[0] != &ffi.TypePointer {
+		t.Fatalf("ffiWriterCloseWithMetadata aTypes[0] = %v, want TypePointer", aTypes[0])
+	}
+}
+
 func TestWriteOptionsSetterArgTypes(t *testing.T) {
 	stringSetters := []*FFI[func(*opendalWriteOptions, string) ([]byte, error)]{
 		ffiWriteOptionsSetCacheControl,

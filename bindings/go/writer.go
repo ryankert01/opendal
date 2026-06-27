@@ -71,6 +71,36 @@ func (op *Operator) Write(path string, data []byte, opts ...WithWriteFn) error {
 	return err
 }
 
+// WriteWithMetadata writes data to the given path like Write, but additionally
+// returns the metadata of the written object (such as etag, version, or last
+// modified) as reported by the underlying service.
+//
+// WriteWithMetadata is a wrapper around the C-binding function
+// `opendal_operator_write_with_metadata`. Which fields of the returned Metadata
+// are populated depends on the service.
+func (op *Operator) WriteWithMetadata(path string, data []byte, opts ...WithWriteFn) (*Metadata, error) {
+	if len(opts) == 0 {
+		meta, err := ffiOperatorWriteWithMetadata.symbol(op.ctx)(op.inner, path, data, nil)
+		if err != nil {
+			return nil, err
+		}
+		return newMetadata(op.ctx, meta), nil
+	}
+
+	o := parseWriteOptions(opts...)
+	cOpts, keepAlive, err := newOpendalWriteOptions(op.ctx, o)
+	if err != nil {
+		return nil, err
+	}
+	defer ffiWriteOptionsFree.symbol(op.ctx)(cOpts)
+	meta, err := ffiOperatorWriteWithMetadata.symbol(op.ctx)(op.inner, path, data, cOpts)
+	runtime.KeepAlive(keepAlive)
+	if err != nil {
+		return nil, err
+	}
+	return newMetadata(op.ctx, meta), nil
+}
+
 // WithWriteFn is a functional option for write operations.
 type WithWriteFn func(*writeOptions)
 
@@ -392,6 +422,22 @@ func (w *Writer) Close() error {
 	return ffiWriterClose.symbol(w.ctx)(w.inner)
 }
 
+// CloseWithMetadata finishes the write like Close, and additionally returns the
+// metadata of the written object (such as etag, version, or last modified) as
+// reported by the underlying service.
+//
+// CloseWithMetadata is a wrapper around the C-binding function
+// `opendal_writer_close_with_metadata`. Like Close, it must be called exactly
+// once; do not call Close and CloseWithMetadata on the same Writer.
+func (w *Writer) CloseWithMetadata() (*Metadata, error) {
+	defer ffiWriterFree.symbol(w.ctx)(w.inner)
+	meta, err := ffiWriterCloseWithMetadata.symbol(w.ctx)(w.inner)
+	if err != nil {
+		return nil, err
+	}
+	return newMetadata(w.ctx, meta), nil
+}
+
 var _ io.WriteCloser = (*Writer)(nil)
 
 var ffiOperatorWrite = newFFI(ffiOpts{
@@ -436,6 +482,32 @@ var ffiOperatorWriteWith = newFFI(ffiOpts{
 			unsafe.Pointer(&opts),
 		)
 		return parseError(ctx, e)
+	}
+})
+
+var ffiOperatorWriteWithMetadata = newFFI(ffiOpts{
+	sym:    "opendal_operator_write_with_metadata",
+	rType:  &typeResultWrite,
+	aTypes: []*ffi.Type{&ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer, &ffi.TypePointer},
+}, func(ctx context.Context, ffiCall ffiCall) func(op *opendalOperator, path string, data []byte, opts *opendalWriteOptions) (*opendalMetadata, error) {
+	return func(op *opendalOperator, path string, data []byte, opts *opendalWriteOptions) (*opendalMetadata, error) {
+		bytePath, err := BytePtrFromString(path)
+		if err != nil {
+			return nil, err
+		}
+		bytes := toOpendalBytes(data)
+		var result resultWrite
+		ffiCall(
+			unsafe.Pointer(&result),
+			unsafe.Pointer(&op),
+			unsafe.Pointer(&bytePath),
+			unsafe.Pointer(&bytes),
+			unsafe.Pointer(&opts),
+		)
+		if result.error != nil {
+			return nil, parseError(ctx, result.error)
+		}
+		return result.meta, nil
 	}
 })
 
@@ -670,5 +742,23 @@ var ffiWriterClose = newFFI(ffiOpts{
 			unsafe.Pointer(&r),
 		)
 		return parseError(ctx, e)
+	}
+})
+
+var ffiWriterCloseWithMetadata = newFFI(ffiOpts{
+	sym:    "opendal_writer_close_with_metadata",
+	rType:  &typeResultWrite,
+	aTypes: []*ffi.Type{&ffi.TypePointer},
+}, func(ctx context.Context, ffiCall ffiCall) func(r *opendalWriter) (*opendalMetadata, error) {
+	return func(r *opendalWriter) (*opendalMetadata, error) {
+		var result resultWrite
+		ffiCall(
+			unsafe.Pointer(&result),
+			unsafe.Pointer(&r),
+		)
+		if result.error != nil {
+			return nil, parseError(ctx, result.error)
+		}
+		return result.meta, nil
 	}
 })

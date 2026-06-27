@@ -46,6 +46,8 @@ func testsWrite(cap *opendal.Capability) []behaviorTest {
 		testWriterWrite,
 		testWriteWithChunkAndConcurrent,
 		testWriterWithAppend,
+		testWriteWithMetadata,
+		testWriterCloseWithMetadata,
 	}
 }
 
@@ -320,4 +322,36 @@ func testWriterWithAppend(assert *require.Assertions, op *opendal.Operator, fixt
 	bs, err := op.Read(path)
 	assert.Nil(err, "read must succeed")
 	assert.Equal([]byte("hello world"), bs)
+}
+
+func testWriteWithMetadata(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	path, content, size := fixture.NewFile()
+
+	meta, err := op.WriteWithMetadata(path, content)
+	assert.Nil(err, "write with metadata must succeed")
+	assert.NotNil(meta, "returned metadata must not be nil")
+	assert.Equal(uint64(size), meta.ContentLength(), "write metadata content length")
+
+	data, err := op.Read(path)
+	assert.Nil(err)
+	assert.Equal(content, data, "written content")
+}
+
+func testWriterCloseWithMetadata(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	path := fixture.NewFilePath()
+	content := []byte("hello opendal write metadata")
+
+	w, err := op.Writer(path)
+	assert.Nil(err)
+	_, err = w.Write(content)
+	assert.Nil(err)
+
+	meta, err := w.CloseWithMetadata()
+	assert.Nil(err, "close with metadata must succeed")
+	assert.NotNil(meta, "returned metadata must not be nil")
+	assert.Equal(uint64(len(content)), meta.ContentLength(), "writer close metadata content length")
+
+	data, err := op.Read(path)
+	assert.Nil(err)
+	assert.Equal(content, data, "written content")
 }
